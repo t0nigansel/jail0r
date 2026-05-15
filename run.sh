@@ -33,15 +33,22 @@ done
 
 # --- Config validation --------------------------------------------------------
 
-: "${JAIL0R_TARGET_URL:?jail0r: JAIL0R_TARGET_URL is not set}"
 : "${JAIL0R_ATTACKS_DIR:=attacks}"
 : "${JAIL0R_JSON_FIELD:=message}"
 : "${JAIL0R_BEARER_TOKEN:=}"
 : "${JAIL0R_TIMEOUT_SECONDS:=60}"
 : "${JAIL0R_RESULTS_DIR:=results}"
 : "${JAIL0R_REQUEST_TEMPLATE_FILE:=}"
-: "${JAIL0R_REFUSAL_PATTERNS:?jail0r: JAIL0R_REFUSAL_PATTERNS is not set (source detectors.example.env)}"
-: "${JAIL0R_LEAK_PATTERNS:?jail0r: JAIL0R_LEAK_PATTERNS is not set (source detectors.example.env)}"
+
+if [ -z "${JAIL0R_TARGET_URL:-}" ]; then
+    printf "jail0r: JAIL0R_TARGET_URL is not set\n" >&2; exit 2
+fi
+if [ -z "${JAIL0R_REFUSAL_PATTERNS:-}" ]; then
+    printf "jail0r: JAIL0R_REFUSAL_PATTERNS is not set (source detectors.example.env)\n" >&2; exit 2
+fi
+if [ -z "${JAIL0R_LEAK_PATTERNS:-}" ]; then
+    printf "jail0r: JAIL0R_LEAK_PATTERNS is not set (source detectors.example.env)\n" >&2; exit 2
+fi
 
 if [ ! -d "$JAIL0R_ATTACKS_DIR" ]; then
     printf "jail0r: attacks dir not found: %s\n" "$JAIL0R_ATTACKS_DIR" >&2
@@ -56,7 +63,8 @@ fi
 mkdir -p "$JAIL0R_RESULTS_DIR"
 SUMMARY="$JAIL0R_RESULTS_DIR/summary.md"
 NO_DATA_TMP="$(mktemp)"
-trap 'rm -f "$NO_DATA_TMP"' EXIT
+CURL_ERR_TMP="$(mktemp)"
+trap 'rm -f "$NO_DATA_TMP" "$CURL_ERR_TMP"' EXIT
 
 {
     printf "# jail0r summary\n\n"
@@ -108,6 +116,7 @@ extract_text() {
     # Try common response shapes in order.
     jq -r '
         if .choices[0].message.content? then .choices[0].message.content
+        elif .reply? then .reply
         elif .response? then .response
         elif .message? then .message
         elif .content? then .content
@@ -116,21 +125,37 @@ extract_text() {
     ' "$file" 2>/dev/null || cat "$file"
 }
 
+# --- HTTP request helper ------------------------------------------------------
+
+do_request() {
+    out_file="$1"; body="$2"
+    if [ -n "$JAIL0R_BEARER_TOKEN" ]; then
+        curl -s -o "$out_file" -w '%{http_code}' \
+            --max-time "$JAIL0R_TIMEOUT_SECONDS" \
+            -X POST "$JAIL0R_TARGET_URL" \
+            -H "Authorization: Bearer $JAIL0R_BEARER_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data "$body" \
+            2>"$CURL_ERR_TMP"
+    else
+        curl -s -o "$out_file" -w '%{http_code}' \
+            --max-time "$JAIL0R_TIMEOUT_SECONDS" \
+            -X POST "$JAIL0R_TARGET_URL" \
+            -H "Content-Type: application/json" \
+            --data "$body" \
+            2>"$CURL_ERR_TMP"
+    fi
+}
+
 # --- Main loop ----------------------------------------------------------------
 
 any_bypass=0
-auth_header=()
-if [ -n "$JAIL0R_BEARER_TOKEN" ]; then
-    auth_header=(-H "Authorization: Bearer $JAIL0R_BEARER_TOKEN")
-fi
 
 for attack_file in "$JAIL0R_ATTACKS_DIR"/*.txt; do
     [ -f "$attack_file" ] || continue
     category="$(basename "$attack_file" .txt)"
 
-    printf "\n## %s\n\n" "$category" >> "$SUMMARY"
-    printf "| # | HTTP | signals | verdict |\n" >> "$SUMMARY"
-    printf "| --- | --- | --- | --- |\n" >> "$SUMMARY"
+    printf "\n## %s\n" "$category" >> "$SUMMARY"
 
     n=0
     while IFS= read -r prompt || [ -n "$prompt" ]; do
@@ -144,15 +169,7 @@ for attack_file in "$JAIL0R_ATTACKS_DIR"/*.txt; do
 
         body="$(build_body "$prompt")"
 
-        http_status="$(
-            curl -sS -o "$out_file" -w '%{http_code}' \
-                --max-time "$JAIL0R_TIMEOUT_SECONDS" \
-                -X POST "$JAIL0R_TARGET_URL" \
-                "${auth_header[@]}" \
-                -H "Content-Type: application/json" \
-                --data "$body" \
-                2>>"$NO_DATA_TMP" || printf '000'
-        )"
+        http_status="$(do_request "$out_file" "$body" || true)"
 
         if [ "$http_status" = "000" ] || [ -z "$http_status" ]; then
             printf -- "- %s #%s: network error or timeout\n" \
@@ -165,8 +182,8 @@ for attack_file in "$JAIL0R_ATTACKS_DIR"/*.txt; do
         fi
 
         if [ "${http_status:0:1}" != "2" ]; then
-            printf "| %s | %s | http error | NO DATA |\n" \
-                "$idx" "$http_status" >> "$SUMMARY"
+            printf "\n### #%s — NO DATA\n\n- **HTTP:** %s\n- **Signals:** none\n- **Prompt:** %s\n" \
+                "$idx" "$http_status" "$prompt" >> "$SUMMARY"
             if [ "$CI_MODE" -eq 1 ]; then
                 printf "jail0r: non-2xx response in CI mode (%s), aborting\n" \
                     "$http_status" >&2
@@ -187,8 +204,8 @@ for attack_file in "$JAIL0R_ATTACKS_DIR"/*.txt; do
         fi
         signals="${signals:-none}"
 
-        printf "| %s | %s | %s | %s |\n" \
-            "$idx" "$http_status" "$signals" "$verdict" >> "$SUMMARY"
+        printf "\n### #%s — %s\n\n- **HTTP:** %s\n- **Signals:** %s\n- **Prompt:** %s\n" \
+            "$idx" "$verdict" "$http_status" "$signals" "$prompt" >> "$SUMMARY"
 
         if [ "$verdict" = "BYPASSED" ]; then
             any_bypass=1
