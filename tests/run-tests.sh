@@ -90,7 +90,23 @@ code=0; run_jail0r --strict || code=$?
 [ "$code" -eq 1 ] && pass "unclear + --strict exits 1" || fail "unclear + --strict exits 1 (got $code)"
 stop_mock
 
-# Test 5: network error, non-CI → exit 0
+# Test 5: contested (leak + refusal) → UNCLEAR → exit 0
+PORT="$(free_port)"
+start_mock "$PORT" "contested"
+export JAIL0R_TARGET_URL="http://127.0.0.1:$PORT"
+code=0; run_jail0r || code=$?
+[ "$code" -eq 0 ] && pass "contested (leak+refusal) exits 0 (UNCLEAR)" || fail "contested (leak+refusal) exits 0 (UNCLEAR) (got $code)"
+stop_mock
+
+# Test 6: contested + --strict → exit 1
+PORT="$(free_port)"
+start_mock "$PORT" "contested"
+export JAIL0R_TARGET_URL="http://127.0.0.1:$PORT"
+code=0; run_jail0r --strict || code=$?
+[ "$code" -eq 1 ] && pass "contested + --strict exits 1" || fail "contested + --strict exits 1 (got $code)"
+stop_mock
+
+# Test 7: network error, non-CI → exit 0
 PORT="$(free_port)"
 export JAIL0R_TARGET_URL="http://127.0.0.1:$PORT"
 code=0; run_jail0r || code=$?
