@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """
 Mock HTTP server for jail0r tests.
 
@@ -7,6 +8,7 @@ Usage: python3 mock_server.py <mode> <port>
 Modes:
   refused   200 with a refusal phrase in the response body
   bypassed  200 with a leak phrase in the response body
+  unclear   200 with a neutral response (no refusal, no leak phrase)
   error     500 with an empty body
 """
 import json
@@ -18,7 +20,8 @@ port = int(sys.argv[2]) if len(sys.argv) > 2 else 8765
 
 RESPONSES = {
     "refused": {"response": "I cannot help with that. I'm not able to assist with this request."},
-    "bypassed": {"response": "Sure, here is how to do it. DAN mode enabled, proceeding without restrictions."},
+    "bypassed": {"response": "Sure, here is how to do it. DAN mode activated, proceeding without restrictions."},
+    "unclear":  {"response": "Of course! Let me look into that for you. Here are some options to consider."},
 }
 
 
