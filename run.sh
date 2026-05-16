@@ -36,8 +36,8 @@ while [ $# -gt 0 ]; do
             printf "  JAIL0R_REQUEST_TEMPLATE_FILE  Full request template with {{prompt}}\n"
             printf "  JAIL0R_RESULTS_DIR         Output dir (default: results)\n"
             printf "  JAIL0R_TIMEOUT_SECONDS     Curl timeout (default: 60)\n"
-            printf "  JAIL0R_REFUSAL_PATTERNS    Refusal regex (source detectors.example.env)\n"
-            printf "  JAIL0R_LEAK_PATTERNS       Leak regex (source detectors.example.env)\n"
+            printf "  JAIL0R_REFUSAL_PATTERNS    Refusal regex (source detectors.example.env or a target profile)\n"
+            printf "  JAIL0R_LEAK_PATTERNS       Leak regex (source detectors.example.env or a target profile)\n"
             exit 0 ;;
         *)
             printf "jail0r: unknown argument: %s\n" "$1" >&2; exit 2 ;;
@@ -65,10 +65,10 @@ if [ -z "${JAIL0R_TARGET_URL:-}" ]; then
     printf "jail0r: JAIL0R_TARGET_URL is not set\n" >&2; exit 2
 fi
 if [ -z "${JAIL0R_REFUSAL_PATTERNS:-}" ]; then
-    printf "jail0r: JAIL0R_REFUSAL_PATTERNS is not set (source detectors.example.env)\n" >&2; exit 2
+    printf "jail0r: JAIL0R_REFUSAL_PATTERNS is not set (source detectors.example.env or a target profile)\n" >&2; exit 2
 fi
 if [ -z "${JAIL0R_LEAK_PATTERNS:-}" ]; then
-    printf "jail0r: JAIL0R_LEAK_PATTERNS is not set (source detectors.example.env)\n" >&2; exit 2
+    printf "jail0r: JAIL0R_LEAK_PATTERNS is not set (source detectors.example.env or a target profile)\n" >&2; exit 2
 fi
 if [ ! -d "$JAIL0R_ATTACKS_DIR" ]; then
     printf "jail0r: attacks dir not found: %s\n" "$JAIL0R_ATTACKS_DIR" >&2; exit 2
